@@ -9,6 +9,7 @@ from ..dependencies import require_admin
 from ..models import FIELD_NOTES, doc_out, utcnow
 from ..schemas import FieldNoteOut, FieldNotePatch, FieldNoteWrite
 from ..services.knowledge_refresh import refresh_source_task
+from ..services.media_resolver import with_cover
 
 router = APIRouter(prefix="/field-notes", tags=["field-notes"])
 
@@ -22,13 +23,13 @@ def list_notes(tag: str | None = None, project: str | None = None, search: str |
         pattern = re.compile(re.escape(search), re.IGNORECASE)
         query["$or"] = [{"title": pattern}, {"excerpt": pattern}, {"body": pattern}]
     notes = list(db[FIELD_NOTES].find(query).sort([("published_at", -1), ("_id", -1)]).limit(limit))
-    return [doc_out(note) for note in notes if not tag or tag in (note.get("tags") or [])]
+    return [with_cover(db, note) for note in notes if not tag or tag in (note.get("tags") or [])]
 
 
 @router.get("/admin", response_model=list[FieldNoteOut], dependencies=[Depends(require_admin)])
 def list_all_notes(db: Database = Depends(get_db)):
     notes = db[FIELD_NOTES].find().sort([("published_at", -1), ("_id", -1)])
-    return [doc_out(note) for note in notes]
+    return [with_cover(db, note) for note in notes]
 
 
 @router.get("/admin/{slug}", response_model=FieldNoteOut, dependencies=[Depends(require_admin)])
@@ -36,7 +37,7 @@ def get_note_admin(slug: str, db: Database = Depends(get_db)):
     note = db[FIELD_NOTES].find_one({"slug": slug})
     if not note:
         raise HTTPException(status_code=404, detail="Field note not found")
-    return doc_out(note)
+    return with_cover(db, note)
 
 
 @router.get("/{slug}", response_model=FieldNoteOut)
@@ -44,7 +45,7 @@ def get_note(slug: str, db: Database = Depends(get_db)):
     note = db[FIELD_NOTES].find_one({"slug": slug, "published": True})
     if not note:
         raise HTTPException(status_code=404, detail="Field note not found")
-    return doc_out(note)
+    return with_cover(db, note)
 
 
 @router.post("", response_model=FieldNoteOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin)])

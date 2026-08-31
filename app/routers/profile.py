@@ -6,6 +6,7 @@ from ..dependencies import require_admin
 from ..models import PROFILES, doc_out, utcnow
 from ..schemas import ProfileOut, ProfileWrite
 from ..services.knowledge_refresh import refresh_source_task
+from ..services.media_resolver import with_avatar
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
@@ -15,7 +16,7 @@ def get_profile(db: Database = Depends(get_db)):
     profile = db[PROFILES].find_one()
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not configured")
-    return doc_out(profile)
+    return with_avatar(db, profile)
 
 
 @router.put("", response_model=ProfileOut, dependencies=[Depends(require_admin)])
@@ -32,4 +33,4 @@ def upsert_profile(payload: ProfileWrite, tasks: BackgroundTasks, db: Database =
         result = db[PROFILES].insert_one(data)
         profile = db[PROFILES].find_one({"_id": result.inserted_id})
     tasks.add_task(refresh_source_task, "profile")
-    return doc_out(profile)
+    return with_avatar(db, profile)

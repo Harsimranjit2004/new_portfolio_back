@@ -7,6 +7,7 @@ from ..dependencies import require_admin
 from ..models import PROJECTS, doc_out, utcnow
 from ..schemas import ProjectOut, ProjectPatch, ProjectWrite
 from ..services.knowledge_refresh import refresh_source_task
+from ..services.media_resolver import with_cover
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -17,13 +18,13 @@ def list_projects(featured: bool | None = None, db: Database = Depends(get_db)):
     if featured is not None:
         query["featured"] = featured
     projects = db[PROJECTS].find(query).sort([("sort_order", 1), ("_id", 1)])
-    return [doc_out(item) for item in projects]
+    return [with_cover(db, item) for item in projects]
 
 
 @router.get("/admin", response_model=list[ProjectOut], dependencies=[Depends(require_admin)])
 def list_all_projects(db: Database = Depends(get_db)):
     projects = db[PROJECTS].find().sort([("sort_order", 1), ("_id", 1)])
-    return [doc_out(item) for item in projects]
+    return [with_cover(db, item) for item in projects]
 
 
 @router.get("/admin/{slug}", response_model=ProjectOut, dependencies=[Depends(require_admin)])
@@ -31,7 +32,7 @@ def get_project_admin(slug: str, db: Database = Depends(get_db)):
     project = db[PROJECTS].find_one({"slug": slug})
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    return doc_out(project)
+    return with_cover(db, project)
 
 
 @router.get("/{slug}", response_model=ProjectOut)
@@ -39,7 +40,7 @@ def get_project(slug: str, db: Database = Depends(get_db)):
     project = db[PROJECTS].find_one({"slug": slug, "published": True})
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    return doc_out(project)
+    return with_cover(db, project)
 
 
 @router.post("", response_model=ProjectOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin)])

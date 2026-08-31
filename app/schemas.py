@@ -47,6 +47,8 @@ class ProfileWrite(BaseModel):
 
 class ProfileOut(ProfileWrite, ORMModel):
     id: str
+    avatar_url: str | None = None
+    avatar_alt: str | None = None
     updated_at: datetime
 
 
@@ -111,6 +113,8 @@ class ProjectPatch(BaseModel):
 
 class ProjectOut(ProjectWrite, ORMModel):
     id: str
+    cover_url: str | None = None
+    cover_alt: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -151,6 +155,8 @@ class FieldNotePatch(BaseModel):
 
 class FieldNoteOut(FieldNoteWrite, ORMModel):
     id: str
+    cover_url: str | None = None
+    cover_alt: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -164,6 +170,8 @@ class MediaOut(ORMModel):
     alt_text: str | None
     caption: str | None
     kind: str
+    purpose: str = "general"
+    related_project: str | None = None
     created_at: datetime
 
 
