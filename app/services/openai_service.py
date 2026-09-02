@@ -38,8 +38,13 @@ class OpenAICompatibleClient:
         self._require(model)
         url = f"{self.settings.openai_base_url.rstrip('/')}/chat/completions"
         payload = {"model": model, "messages": messages, "temperature": 0.15, "max_tokens": 700}
-        async with httpx.AsyncClient(timeout=75) as client:
-            response = await client.post(url, headers=self._headers(), json=payload)
+        try:
+            async with httpx.AsyncClient(timeout=75) as client:
+                response = await client.post(url, headers=self._headers(), json=payload)
+        except httpx.TimeoutException as exc:
+            raise HTTPException(status_code=504, detail="Chat provider timed out") from exc
+        except httpx.RequestError as exc:
+            raise HTTPException(status_code=502, detail="Unable to connect to the chat provider") from exc
         if response.is_error:
             raise HTTPException(status_code=502, detail=f"Chat provider error: {response.text[:500]}")
         try:
