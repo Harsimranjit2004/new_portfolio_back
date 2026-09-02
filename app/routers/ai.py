@@ -1,13 +1,16 @@
+import json
+
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import APIRouter, Depends, HTTPException, status
 from pymongo.database import Database
+from starlette.responses import StreamingResponse
 
 from ..database import get_db
 from ..dependencies import require_admin
 from ..models import KNOWLEDGE_CHUNKS, KNOWLEDGE_DOCUMENTS, doc_out, utcnow
 from ..schemas import AIChatRequest, AIChatResponse, KnowledgeDocumentOut, KnowledgeStatus, ReindexRequest, ReindexResponse
-from ..services.ai_service import answer_portfolio_question
+from ..services.ai_service import answer_portfolio_question, stream_portfolio_answer
 from ..services.rag_pipeline import knowledge_status, reindex
 
 router = APIRouter(prefix="/ai", tags=["ai"])
@@ -16,6 +19,19 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 @router.post("/chat", response_model=AIChatResponse)
 async def chat(payload: AIChatRequest, db: Database = Depends(get_db)):
     return await answer_portfolio_question(db, payload)
+
+
+@router.post("/chat/stream")
+async def chat_stream(payload: AIChatRequest, db: Database = Depends(get_db)):
+    async def event_stream():
+        try:
+            async for event in stream_portfolio_answer(db, payload):
+                yield json.dumps(event, ensure_ascii=False) + "\n"
+        except Exception as exc:
+            detail = exc.detail if isinstance(exc, HTTPException) else "Unable to complete the streamed response"
+            yield json.dumps({"type": "error", "error": str(detail)}, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(event_stream(), media_type="application/x-ndjson")
 
 
 @router.post("/reindex", response_model=ReindexResponse, dependencies=[Depends(require_admin)])

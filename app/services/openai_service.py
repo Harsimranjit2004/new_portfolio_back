@@ -1,3 +1,6 @@
+import json
+from collections.abc import AsyncIterator
+
 import httpx
 from fastapi import HTTPException, status
 
@@ -43,3 +46,54 @@ class OpenAICompatibleClient:
             return response.json()["choices"][0]["message"]["content"].strip()
         except (KeyError, IndexError, TypeError) as exc:
             raise HTTPException(status_code=502, detail="Chat provider returned an unexpected response") from exc
+
+    async def stream_chat(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
+        model = self.settings.openai_model
+        self._require(model)
+        url = f"{self.settings.openai_base_url.rstrip('/')}/chat/completions"
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.15,
+            "max_tokens": 700,
+            "stream": True,
+        }
+        async with httpx.AsyncClient(timeout=75) as client:
+            async with client.stream("POST", url, headers=self._headers(), json=payload) as response:
+                if response.is_error:
+                    detail = (await response.aread()).decode(errors="replace")[:500]
+                    raise HTTPException(status_code=502, detail=f"Chat provider error: {detail}")
+
+                data_lines: list[str] = []
+                async for line in response.aiter_lines():
+                    if not line:
+                        if data_lines:
+                            event_data = "\n".join(data_lines)
+                            data_lines.clear()
+                            if event_data == "[DONE]":
+                                return
+                            yield self._delta_content(event_data)
+                        continue
+                    if line.startswith(":"):
+                        continue
+                    field, separator, value = line.partition(":")
+                    if field == "data":
+                        data_lines.append(value[1:] if separator and value.startswith(" ") else value)
+
+                if data_lines:
+                    event_data = "\n".join(data_lines)
+                    if event_data != "[DONE]":
+                        yield self._delta_content(event_data)
+
+    @staticmethod
+    def _delta_content(event_data: str) -> str:
+        try:
+            payload = json.loads(event_data)
+            if payload.get("error"):
+                error = payload["error"]
+                detail = error.get("message") if isinstance(error, dict) else str(error)
+                raise HTTPException(status_code=502, detail=f"Chat provider error: {detail}")
+            content = payload["choices"][0]["delta"].get("content")
+            return content if isinstance(content, str) else ""
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
+            raise HTTPException(status_code=502, detail="Chat provider returned an invalid stream event") from exc
